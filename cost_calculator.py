@@ -5,7 +5,6 @@ from PIL import Image, ImageTk
 
 from results import Results
 
-
 class CostCalculatorApp:
     def __init__(self, root):
         self.root = root
@@ -55,7 +54,6 @@ class CostCalculatorApp:
             self.root.destroy()
 
     def create_menu(self):
-        """Create a menu bar with File and Help options."""
         menu_bar = tk.Menu(self.root)
         self.root.config(menu=menu_bar)
 
@@ -170,7 +168,8 @@ class CostCalculatorApp:
         ecs_tasks = 0
         ecs_vcpu = 0
         ecs_memory = 0
-        connector_tasks = 1  # Always at least 1 connector
+        connector_tasks = 1
+        eks_nodes = 0
         data_transfer_multiplier = 1.0
 
         for q_id, answer_id in self.user_responses.items():
@@ -186,6 +185,7 @@ class CostCalculatorApp:
                 ecs_memory = max(ecs_memory, logic['ECS Memory (GB)'])
                 connector_tasks = max(connector_tasks, logic['Connector Tasks'])
                 data_transfer_multiplier *= logic['Data Transfer Multiplier']
+                eks_nodes = max(ecs_tasks, logic['EKS Nodes'])
 
         duration = self.user_responses.get(4, 0)
         throughput = self.user_responses.get(2, 0)
@@ -198,21 +198,47 @@ class CostCalculatorApp:
         total_ecs = ecs_vcpu_cost + ecs_memory_cost + ecs_data_transfer_cost
 
         # Connector Calculations
-        confluent_task_cost = duration * self.pricing['Confluent Cost per task/hour'] * connector_tasks
-        data_transfer_cost = data_transfer_gb * self.pricing['Confluent Data Transfer Cost per GB']
-        total_confluent = confluent_task_cost + data_transfer_cost
+        connnector_task_cost = duration * self.pricing['Confluent Cost per task/hour'] * connector_tasks
+        connector_data_transfer_cost = data_transfer_gb * self.pricing['Confluent Data Transfer Cost per GB']
+        total_confluent = connnector_task_cost + connector_data_transfer_cost
+
+        # EKS Calculation
+        eks_cluster_cost = duration * self.pricing['EKS Cluster Cost per hour']
+        eks_node_cost = eks_nodes * duration * self.pricing['EC2 Instance Cost per hour']
+        eks_data_transfer_cost = data_transfer_gb * self.pricing['EC2 Data Transfer Cost per GB']
+        total_eks = eks_cluster_cost + eks_node_cost + eks_data_transfer_cost
 
         return {
             'ECS': {
-                'tasks': ecs_tasks, 'vcpu': ecs_vcpu, 'memory': ecs_memory,
-                'duration': duration, 'vcpu_cost': ecs_vcpu_cost,
-                'memory_cost': ecs_memory_cost, 'data_transfer_cost': ecs_data_transfer_cost,
+                'tasks': ecs_tasks,
+                'vcpu': ecs_vcpu,
+                'memory': ecs_memory,
+                'duration': duration,
+                'vcpu_cost': ecs_vcpu_cost,
+                'memory_cost': ecs_memory_cost,
+                'throughput': throughput,
+                'data_transfer_gb': data_transfer_gb,
+                'data_transfer_cost': ecs_data_transfer_cost,
                 'total': total_ecs
             },
             'Confluent': {
-                'tasks': connector_tasks, 'duration': duration, 'throughput': throughput,
-                'task_cost': confluent_task_cost, 'data_transfer': data_transfer_gb,
-                'data_cost': data_transfer_cost, 'total': total_confluent
+                'tasks': connector_tasks,
+                'duration': duration,
+                'task_cost': connnector_task_cost,
+                'throughput': throughput,
+                'data_transfer_gb': data_transfer_gb,
+                'data_transfer_cost': connector_data_transfer_cost,
+                'total': total_confluent
+            },
+            'EKS': {
+                'nodes': eks_nodes,
+                'eks_cluster_cost': eks_cluster_cost,
+                'eks_node_cost': eks_node_cost,
+                'duration': duration,
+                'throughput': throughput,
+                'data_transfer_gb': data_transfer_gb,
+                'data_transfer_cost': eks_data_transfer_cost,
+                'total': total_eks
             }
         }
 
